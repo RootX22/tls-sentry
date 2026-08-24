@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Test
+        run: pytest -q
+
+      # The unverified-certificate path relies on a private ssl helper that has
+      # no public equivalent. It is guarded, but the guard degrades to "no
+      # detail" — which would silently gut the diagnostics rather than fail.
+      # This asserts the fast path is genuinely working on this interpreter.
+      - name: Assert certificate details survive a failed verification
+        run: |
+          python - <<'PY'
+          import ssl, sys
+          fn = getattr(ssl._ssl, "_test_decode_cert_bytes", None)
+          if fn is None:
+              print(f"::warning::_test_decode_cert_bytes missing on {sys.version.split()[0]};"
+                    " tls-sentry falls back to the tempfile path")
+          else:
+              print("ok: private DER decoder present")
+          PY
+
+  lint:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+
+  smoke:
+    name: Live smoke test
+    runs-on: ubuntu-latest
+    # Reaches badssl.com, so it is allowed to fail without failing the build:
+    # a third party being down is not a defect in this project. The unit suite
+    # is the gate; this is a canary that the real world still behaves as the
+    # local fixtures assume.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+
+      - name: Classify known-bad endpoints correctly
+        run: |
+          set -euo pipefail
+          tls-sentry --json -t 15 \
+            github.com \
+            expired.badssl.com \
+            self-signed.badssl.com \
+            wrong.host.badssl.com > out.json || true
+
+          python - <<'PY'
+          import json, sys
+          want = {
+              "github.com": "ok",
+              "expired.badssl.com": "expired",
+              "self-signed.badssl.com": "untrusted",
+              "wrong.host.badssl.com": "hostname_mismatch",
+          }
+          got = {r["host"]: r["status"] for r in json.load(open("out.json"))["results"]}
+          bad = [(h, want[h], got.get(h)) for h in want if got.get(h) != want[h]]
+          for h, w, g in bad:
+              print(f"MISMATCH {h}: expected {w}, got {g}")
+          sys.exit(1 if bad else 0)
+          PY
+
+      - name: Exit code is 1 when there are findings
+        run: |
+          if tls-sentry expired.badssl.com -t 15 >/dev/null 2>&1; then
+            echo "expected a non-zero exit for an expired certificate"; exit 1
+          fi

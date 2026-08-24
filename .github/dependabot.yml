@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Only GitHub Actions: the shell tooling here has no package dependencies,
+  # which is the entire point of it.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    labels:
+      - dependencies

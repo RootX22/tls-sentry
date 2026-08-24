@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tls-sentry"
+version = "1.0.0"
+description = "Check TLS certificates for expiry, trust, and hostname match — with exit codes for CI."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Mohamed Mohsen" }]
+keywords = ["tls", "ssl", "certificate", "monitoring", "devops", "expiry"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Monitoring",
+    "Topic :: Security",
+]
+# No runtime dependencies: stdlib ssl and socket do all of it. Anything that
+# runs on a cron on a bare server should not need a virtualenv to exist.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "cryptography>=41", "ruff>=0.5"]
+
+[project.scripts]
+tls-sentry = "tlssentry.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/RootX22/tls-sentry"
+Issues = "https://github.com/RootX22/tls-sentry/issues"
+
+[tool.setuptools.packages.find]
+include = ["tlssentry*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+# _test_decode_cert_bytes is a private ssl helper with no public equivalent;
+# its use is deliberate and guarded. See the comment at the call site.
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
