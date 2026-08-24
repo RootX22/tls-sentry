@@ -6,10 +6,13 @@ import argparse
 import concurrent.futures
 import json
 import os
+import platform
+import ssl
 import sys
 import urllib.error
 import urllib.request
 
+from . import __version__
 from .probe import DEFAULT_PORT, DEFAULT_TIMEOUT, Result, Status, check
 
 # Exit codes are part of the interface — CI gates on them.
@@ -151,6 +154,17 @@ def build_parser() -> argparse.ArgumentParser:
         epilog="Exit codes: 0 nothing at or above the threshold, 1 findings, 2 usage error.",
     )
     p.add_argument("hosts", nargs="*", help="host or host:port")
+    # Reported alongside the Python and OpenSSL versions: behaviour here depends
+    # on the linked OpenSSL (3.6 rejects chains without an Authority Key
+    # Identifier, older releases accept them), so a bug report that omits it is
+    # missing the most load-bearing detail.
+    p.add_argument(
+        "-V", "--version", action="version",
+        version=(
+            f"tls-sentry {__version__} "
+            f"(python {platform.python_version()}, {ssl.OPENSSL_VERSION})"
+        ),
+    )
     p.add_argument("-f", "--file", help="file of targets, one per line ('-' for stdin)")
     p.add_argument("-w", "--warn-days", type=int, default=21,
                    help="days before expiry to start warning (default: 21)")

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tls-sentry"
-version = "1.0.0"
+version = "1.0.1"
 description = "Check TLS certificates for expiry, trust, and hostname match — with exit codes for CI."
 readme = "README.md"
 requires-python = ">=3.9"

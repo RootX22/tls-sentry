@@ -163,3 +163,35 @@ def test_webhook_is_not_called_when_everything_is_ok(monkeypatch, capsys):
                         lambda *a, **k: called.append(1))
     cli.main(["a.com", "--webhook", "http://example.com/hook"])
     assert not called, "no findings means nothing to notify about"
+
+
+# ── --version ───────────────────────────────────────────────────────────────
+
+def test_version_flag_reports_python_and_openssl(capsys):
+    """argparse's version action exits 0 via SystemExit.
+
+    The OpenSSL version is part of the output on purpose: behaviour depends on
+    it (3.6 rejects chains with no Authority Key Identifier, older releases
+    accept them), so a bug report without it is missing the key detail.
+    """
+    import ssl
+
+    from tlssentry import __version__
+
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["--version"])
+    assert exc.value.code == 0
+
+    out = capsys.readouterr().out
+    assert __version__ in out
+    assert "python" in out.lower()
+    assert ssl.OPENSSL_VERSION.split()[1] in out
+
+
+def test_short_version_flag_matches_long(capsys):
+    with pytest.raises(SystemExit):
+        cli.main(["-V"])
+    short = capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        cli.main(["--version"])
+    assert short == capsys.readouterr().out
