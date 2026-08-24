@@ -27,8 +27,16 @@ from cryptography.x509.oid import NameOID  # noqa: E402
 
 
 def _make_cert(common_name, *, not_before, not_after, san=None, issuer_key=None,
-               issuer_name=None, is_ca=False):
-    """Build a certificate. Self-signed unless an issuer key is supplied."""
+               issuer_name=None, issuer_pubkey=None, is_ca=False):
+    """Build a certificate. Self-signed unless an issuer key is supplied.
+
+    These fixtures carry the full extension set a real CA issues — key usage,
+    extended key usage, and crucially Subject/Authority Key Identifier. OpenSSL
+    3.6 (which ships with Python 3.13) rejects a chain whose leaf has no
+    Authority Key Identifier with "Missing Authority Key Identifier", so a
+    minimal certificate that verified fine on older releases now fails. Every
+    test then reports `untrusted`, which looks like a product bug and is not.
+    """
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
     issuer = issuer_name or subject
@@ -50,6 +58,42 @@ def _make_cert(common_name, *, not_before, not_after, san=None, issuer_key=None,
     builder = builder.add_extension(
         x509.BasicConstraints(ca=is_ca, path_length=None), critical=True
     )
+
+    if is_ca:
+        builder = builder.add_extension(
+            x509.KeyUsage(
+                digital_signature=False, content_commitment=False,
+                key_encipherment=False, data_encipherment=False,
+                key_agreement=False, key_cert_sign=True, crl_sign=True,
+                encipher_only=False, decipher_only=False,
+            ),
+            critical=True,
+        )
+    else:
+        builder = builder.add_extension(
+            x509.KeyUsage(
+                digital_signature=True, content_commitment=False,
+                key_encipherment=True, data_encipherment=False,
+                key_agreement=False, key_cert_sign=False, crl_sign=False,
+                encipher_only=False, decipher_only=False,
+            ),
+            critical=True,
+        )
+        builder = builder.add_extension(
+            x509.ExtendedKeyUsage([x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]),
+            critical=False,
+        )
+
+    builder = builder.add_extension(
+        x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False
+    )
+    # AKI points at the signer's key — the issuer's for a signed leaf, its own
+    # for anything self-signed.
+    aki_source = issuer_pubkey or key.public_key()
+    builder = builder.add_extension(
+        x509.AuthorityKeyIdentifier.from_issuer_public_key(aki_source), critical=False
+    )
+
     cert = builder.sign(issuer_key or key, hashes.SHA256())
     return cert, key
 
@@ -134,6 +178,7 @@ def _serve_leaf(tmp_path, ca, *, days_left, san=("localhost",), self_signed=Fals
         san=list(san),
         issuer_key=None if self_signed else ca["key"],
         issuer_name=None if self_signed else ca["cert"].subject,
+        issuer_pubkey=None if self_signed else ca["key"].public_key(),
     )
     return TLSServer(_write(tmp_path, "leaf", cert, key))
 
