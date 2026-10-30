@@ -11,7 +11,9 @@ permissions:
 jobs:
   test:
     name: Test (py${{ matrix.python }})
-    runs-on: ubuntu-latest
+    # Python 3.9 has no build for Ubuntu 26.04, but RHEL 9 still ships it as the
+    # system Python, so that job stays on 24.04.
+    runs-on: ${{ matrix.python == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
